@@ -310,7 +310,7 @@ class CustomConfiguration extends ClientEndpointConfig.Configurator{
     @Override
     public void beforeRequest(Map<String, List<String>> headers) {
         super.beforeRequest(headers);
-        headers.put("Authorization", Collections.singletonList("Bearer <your_dashscope_api_key>"));
+        headers.put("Authorization", Collections.singletonList("Bearer sk-6ba44564c1ab4c80b1e012a7fb89dd87"));
         headers.put("user-agent", Collections.singletonList("your_platform_info"));
         headers.put("X-DashScope-WorkSpace", Collections.singletonList("workspace"));
         headers.put("X-DashScope-DataInspection", Collections.singletonList("enable"));
