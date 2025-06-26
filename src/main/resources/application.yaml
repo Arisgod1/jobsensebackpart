@@ -12,6 +12,18 @@ spring:
       chat:
         options:
           model: qwen-max-latest
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/jobsense
+    username: postgres
+    password: jinmuyan1314217
+
+mybatis:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    #开启驼峰命名映射开关
+    map-underscore-to-camel-case: true
+
 logging:
   level:
     org.springframework.ai: debug
