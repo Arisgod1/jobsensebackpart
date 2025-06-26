@@ -1,6 +1,6 @@
 spring:
   application:
-   name: agent-ai
+    name: agent-ai
   ai:
     ollama:
       base-url: http://localhost:11434
@@ -12,6 +12,10 @@ spring:
       chat:
         options:
           model: qwen-max-latest
+      embedding:
+        options:
+          model: text-embedding-v3
+          dimensions: 1024
   datasource:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://localhost:5432/jobsense
@@ -21,7 +25,7 @@ spring:
 mybatis:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-    #开启驼峰命名映射开关
+    # 开启驼峰命名映射开关
     map-underscore-to-camel-case: true
 
 logging:
