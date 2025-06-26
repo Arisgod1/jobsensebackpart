@@ -113,7 +113,6 @@ public class PdfController {
         );
         // 2.读取PDF文档，拆分为Document
         List<Document> documents = reader.read();
-        
         // 3.写入向量库
         vectorStore.add(documents);
     }
