@@ -29,7 +29,7 @@ import static org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor.F
 @Slf4j
 @RequiredArgsConstructor
 @RestController
-@RequestMapping("/ai/pdf")
+@RequestMapping("/ai/pdf1")
 public class PdfController {
 
     private final FileRepository fileRepository;
