@@ -64,6 +64,7 @@ public class realtimeAudio {
   //  private static final String apikey="";
     static  String  message1="";
     static final Object message2=new Object();
+    static  String response="";
     @OnOpen
     public void onOpen(Session session, @PathParam("sid") String sid,@PathParam("remind") String remind) {
         JSONObject jsonObject= JSON.parseObject( remind);
@@ -126,9 +127,15 @@ public class realtimeAudio {
     public void onMessage(ByteBuffer  message, @PathParam("sid") String sid) throws InterruptedException {
 
             try {
+                APIWebsocket.flag=false;
                 log.info("[接收消息] 获取音频数据: {}", message);
                 log.info("数据的大小为{}", message.capacity());
                 log.info("[接受消息的人{}", sid);
+                byte[] array = message.array();
+                if(array[0]==1){
+                    log.info("停止位");
+                    APIWebsocket.flag=true;
+                }
                 // 发送数据给API
                 Map<String, Object> connect = apiWebsocket.connect();
                 Integer success = (Integer)  connect.get("success");
@@ -152,6 +159,10 @@ public class realtimeAudio {
                                 }// 等待APIWebsocket通知
                             }
                         });
+                        if(response!=null){
+                            sendToSpecificClient(sid,response);
+                            log.info("面试的问题已经发出{}", response);
+                        }
                         log.info("返回的不为空的值为{}",message1);
                         sendToSpecificClient(sid, "AI识别结果：" + message1);
                         log.info("返回的值为{}",message);
@@ -170,6 +181,10 @@ public class realtimeAudio {
     public void onClose(Session session, @PathParam("sid") String sid) {
         Session remove = sessionMap.remove(sid);
         if (remove != null) {
+            if(response!=null){
+                sendToSpecificClient(sid,  response);
+                log.info("面试的问题已经发出{}", response);
+            }
             log.info("[连接关闭] 客户端: {} | 当前在线: {}", sid, sessionMap.size());
         }
         log.info("[连接关闭] 剩余在线: {}", sessionMap.size());

@@ -3,8 +3,10 @@ package com.tmd.ai.WebSocketServer;
 import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tmd.ai.config.CustomConfiguration;
+import com.tmd.ai.controller.InterviewController;
 import jakarta.websocket.*;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -22,11 +24,14 @@ import java.util.concurrent.TimeUnit;
 
 import static com.tmd.ai.WebSocketServer.realtimeAudio.message1;
 import static com.tmd.ai.WebSocketServer.realtimeAudio.message2;
+import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY;
 
 @Component
 @ClientEndpoint(configurator = CustomConfiguration.class)
 @Slf4j
 public class APIWebsocket {
+
+    private  ChatClient chatClient;
    //作为客户端向ai发送消息
     private static Session session;
     public static  final // 创建一个固定大小的线程池（推荐方式）
@@ -72,7 +77,7 @@ public class APIWebsocket {
                         log.info("[开始识别]，服务器知道任务已经开启");
                         // 开始识别，调用sendmessage发送消息，激活下面的锁
                         log.info("激活锁，准备发送数据，task_id为{}", string1);
-                        flag = true;
+//                        flag = true;
                     } else if (head.getString("event").equals("result-generated")) {
                             synchronized (message2){
                                 log.info("结果开始生成,开始接受");
@@ -91,7 +96,16 @@ public class APIWebsocket {
                         session.close();
                         log.info("任务结束，session已经关闭");
                         //断开realtime和API的链接
-
+                        //把message1和简历内容一起传递给ai，返回一个问题，然后问题发送给前端
+                        String pdfContent=InterviewController.pdfContent;
+                        String prompt="这是这个人的简历内容:  "+pdfContent+"这是这个人的自我介绍或者回答的问题，count为1证明是自我介绍，大于一的你就当作是回答问题，下面是count的值:"+count
+                                +message1+"    请根据上述提供的信酝酿一个能测试出面试者真正水平的问题，不要太长，五十字以内足以";
+                        String response = chatClient.prompt()
+                                .user(prompt)
+                                .call()
+                                .content();
+                        realtimeAudio.response=response;
+                        count++;
                     } else {
                         log.info("[错误消息]{}", head.getString("error_message"));
                     }
@@ -136,7 +150,7 @@ public class APIWebsocket {
            ",\"task\":\"asr\",\"function\":\"recognition\",\"model\":\"paraformer-realtime-v2\",\"parameters\":{\"format\":\"pcm\",\"sample_rate\":16000,\"disfluency_removal_enabled\":false,\"language_hints\":[\"zh\"]}" +
            ",\"input\":{}}}";
      private static final ObjectMapper objectMapper = new ObjectMapper();
-     private static boolean flag = false;
+     public static boolean flag = false;
 
 
 
@@ -179,15 +193,18 @@ public class APIWebsocket {
                         executor.submit(new Runnable() {
                             @Override
                             public void run() {
-                                log.info("开始发送数据,又大又圆的书,task_id为{}", task_id);
-                                if (!task_id.isEmpty()){
+                                byte[] array = message.array();
+                                if (array[0] != -1){
 
-                                    log.info("开始发送数据");
-                                    try {
-                                        // 检查是否有数据可读
-                                        if (message.hasRemaining()) { // 等价于 remaining() > 0
-                                            //判断这个音频数据是否不是静音音频
-                                            //将message数据转成可以打印出来的十六进制
+                                    log.info("开始发送数据,又大又圆的书,task_id为{}", task_id);
+                                    if (!task_id.isEmpty()){
+
+                                        log.info("开始发送数据");
+                                        try {
+                                            // 检查是否有数据可读
+                                            if (message.hasRemaining()) { // 等价于 remaining() > 0
+                                                //判断这个音频数据是否不是静音音频
+                                                //将message数据转成可以打印出来的十六进制
                                             /*String messageInspect=UUID.randomUUID().toString();
                                             ByteArrayOutputStream baos = new ByteArrayOutputStream();
                                             DataOutputStream dos = new DataOutputStream(baos);
@@ -196,33 +213,33 @@ public class APIWebsocket {
                                             dos.write(message.capacity());
                                             APIWebsocket.session.getBasicRemote().sendBinary(ByteBuffer.wrap(baos.toByteArray()));
                                             log.info("我已经发送检测网络层的信息{}", messageInspect);*/
-                                            // 新增：验证WebSocket连接状态
-                                            if (APIWebsocket.session == null || !APIWebsocket.session.isOpen()) {
-                                                log.error("WebSocket连接未打开，无法发送数据");
-                                                throw new RuntimeException("WebSocket连接异常");
-                                            }
-                                            // 新增：获取连接状态信息
-                                            String connectionInfo = String.format(
-                                                    "WebSocket状态: %s,最大消息大小: %d",
-                                                    APIWebsocket.session.isOpen() ? "已连接" : "已关闭",
-                                                    APIWebsocket.session.getMaxBinaryMessageBufferSize()
-                                            );
-                                            log.info(connectionInfo);
-                                            String s = HexFormat.of().formatHex(message.array(),0,32);
-                                            log.info("十六进制数据为：{}", s);
-                                            log.info("ByteBuffer中有 {} 字节数据待发送", message.remaining());
-                                            //每次发送100ms的数据
-                                           ByteBuffer byteBuffer = ByteBuffer.allocate( 31*1024);
-                                            byteBuffer.put(message);
-                                            byteBuffer.flip();
-                                            //把message切成小块一点一点发送过去
+                                                // 新增：验证WebSocket连接状态
+                                                if (APIWebsocket.session == null || !APIWebsocket.session.isOpen()) {
+                                                    log.error("WebSocket连接未打开，无法发送数据");
+                                                    throw new RuntimeException("WebSocket连接异常");
+                                                }
+                                                // 新增：获取连接状态信息
+                                                String connectionInfo = String.format(
+                                                        "WebSocket状态: %s,最大消息大小: %d",
+                                                        APIWebsocket.session.isOpen() ? "已连接" : "已关闭",
+                                                        APIWebsocket.session.getMaxBinaryMessageBufferSize()
+                                                );
+                                                log.info(connectionInfo);
+                                                String s = HexFormat.of().formatHex(message.array(),0,32);
+                                                log.info("十六进制数据为：{}", s);
+                                                log.info("ByteBuffer中有 {} 字节数据待发送", message.remaining());
+                                                //每次发送100ms的数据
+                                                ByteBuffer byteBuffer = ByteBuffer.allocate( 31*1024);
+                                                byteBuffer.put(message);
+                                                byteBuffer.flip();
+                                                //把message切成小块一点一点发送过去
 
-                                            session.getBasicRemote().sendBinary(byteBuffer);
-                                            try{
-                                               log.info("分块发送了哦");
-                                               // APIWebsocket.session.getBasicRemote().sendBinary(message);
-                                                // 发送测试消息请求确认
-                                                // 包含header和payload的完整消息结构
+                                                session.getBasicRemote().sendBinary(byteBuffer);
+                                                try{
+                                                    log.info("分块发送了哦");
+                                                    // APIWebsocket.session.getBasicRemote().sendBinary(message);
+                                                    // 发送测试消息请求确认
+                                                    // 包含header和payload的完整消息结构
                                                /* String pingMessage = "{\"header\":{\"action\":\"ping\",\"timestamp\":" +
                                                         System.currentTimeMillis() + "},\"payload\":{\"input\":{}}}";
                                                 APIWebsocket.session.getAsyncRemote().sendText(pingMessage, pingResult -> {
@@ -232,26 +249,26 @@ public class APIWebsocket {
                                                         log.error("Ping消息发送失败: {}", pingResult.getException().getMessage());
                                                     }
                                                 });*/
-                                            }catch (Exception e){
-                                                log.error("发送数据异常{}", e.getMessage());
-                                                // 获取详细的网络错误信息
-                                                if (APIWebsocket.session.getUserProperties().containsKey("javax.websocket.endpoint.remoteAddress")) {
-                                                    Socket socket = (Socket) APIWebsocket.session.getUserProperties().get("javax.websocket.endpoint.remoteAddress");
-                                                    if (socket != null) {
-                                                        log.error("网络连接状态: {}", socket.isConnected() ? "已连接" : "已断开");
-                                                        log.error("网络错误详情: {}", socket.getLocalSocketAddress());
+                                                }catch (Exception e){
+                                                    log.error("发送数据异常{}", e.getMessage());
+                                                    // 获取详细的网络错误信息
+                                                    if (APIWebsocket.session.getUserProperties().containsKey("javax.websocket.endpoint.remoteAddress")) {
+                                                        Socket socket = (Socket) APIWebsocket.session.getUserProperties().get("javax.websocket.endpoint.remoteAddress");
+                                                        if (socket != null) {
+                                                            log.error("网络连接状态: {}", socket.isConnected() ? "已连接" : "已断开");
+                                                            log.error("网络错误详情: {}", socket.getLocalSocketAddress());
+                                                        }
                                                     }
+                                                    throw new RuntimeException(e);
                                                 }
-                                                throw new RuntimeException(e);
-                                            }
-                                            log.info("成功发送 {} 字节数据", message.capacity());
-                                            //等待100ms，继续发送
-                                            try {
-                                                Thread.sleep(200);
-                                            }
-                                            catch (InterruptedException e) {
-                                                throw new RuntimeException(e);
-                                            }
+                                                log.info("成功发送 {} 字节数据", message.capacity());
+                                                //等待100ms，继续发送
+                                                try {
+                                                    Thread.sleep(200);
+                                                }
+                                                catch (InterruptedException e) {
+                                                    throw new RuntimeException(e);
+                                                }
                                             /*// 复制数据到byte数组
                                             byte[] byteArray = new byte[message.remaining()];
                                             message.get(byteArray);
@@ -259,15 +276,20 @@ public class APIWebsocket {
 
                                             // 发送数据
                                             APIWebsocket.session.getBasicRemote().sendBinary(ByteBuffer.wrap(byteArray));*/
-                                            //log.info("成功发送 {} 字节数据", byteArray.length);
-                                        } else {
-                                            log.warn("ByteBuffer中没有可用数据，position={}", message.position());
+                                                //log.info("成功发送 {} 字节数据", byteArray.length);
+                                            } else {
+                                                log.warn("ByteBuffer中没有可用数据，position={}", message.position());
+                                            }
+                                        } catch (Exception e) {
+                                            log.error("发送数据失败", e);
+                                            throw new RuntimeException(e);
                                         }
-                                    } catch (Exception e) {
-                                        log.error("发送数据失败", e);
-                                        throw new RuntimeException(e);
-                                    }
-                                    log.info("[发送消息] Message获取数据: {}",  message);
+                                        log.info("[发送消息] Message获取数据: {}",  message);
+
+
+
+                                }
+
                             }
                             }
                         });
@@ -286,11 +308,6 @@ public class APIWebsocket {
                                             "}";
                                     if(flag){
                                         flag = false;
-                                        try {
-                                            Thread.sleep(180000);
-                                        } catch (InterruptedException e) {
-                                            throw new RuntimeException(e);
-                                        }
                                         try {
                                             log.info("[发送消息] 尝试发送finish-task数据: {}", json);
                                             APIWebsocket.session.getBasicRemote().sendText(json);

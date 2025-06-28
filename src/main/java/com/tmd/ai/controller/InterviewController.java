@@ -36,7 +36,7 @@ public class InterviewController {
 
     private final FileRepository fileRepository;
 
-    private String pdfContent;
+    public static String pdfContent;
 
     @PostMapping(value = "/chat", produces = "text/html;charset=utf-8")
     public Flux<String> chat(@RequestBody PDFVO pdfVO){
