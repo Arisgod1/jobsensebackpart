@@ -8,11 +8,11 @@ import java.util.List;
 
 public class RunPythonWithConda {
 
-    public void face () {
+    public void face(String[] args) {
         // conda环境名
         String condaEnv = "pruc";
         // python脚本路径
-        String pythonScript = "C:\\Users\\wwwsh\\Desktop\\jobsensebackpart\\src\\main\\resources\\static\\facial-expression\\face.py";
+        String pythonScript = "C:\\Users\\wwwsh\\IdeaProjects\\agent-ai\\src\\face\\resources\\static\\facial-expression\\face.py";
 
 
         // 组装命令
@@ -27,7 +27,7 @@ public class RunPythonWithConda {
 
         try {
             ProcessBuilder pb = new ProcessBuilder(commands);
-            pb.directory(new File("src/main/resources/static/facial-expression"));
+            pb.directory(new File("src/face/resources/static/facial-expression"));
             pb.redirectErrorStream(true); // 合并输出和错误流
             Process process = pb.start();
 

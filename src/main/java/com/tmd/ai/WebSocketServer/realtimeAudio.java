@@ -2,6 +2,7 @@ package com.tmd.ai.WebSocketServer;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.tmd.ai.service.RunPythonWithConda;
 import jakarta.websocket.*;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
@@ -60,13 +61,14 @@ public class realtimeAudio {
 //服务端给客户端发消息
 //存放会话对象
     public static  final ConcurrentHashMap<String, Session> sessionMap = new ConcurrentHashMap<>();
-   // private static final Logger logger = Logger.getLogger(WebSocketServer.class.getName());
-  //  private static final String apikey="";
     static  String  message1="";
     static final Object message2=new Object();
     static  String response="";
+    static final Object message3=new Object();
     @OnOpen
     public void onOpen(Session session, @PathParam("sid") String sid,@PathParam("remind") String remind) {
+        RunPythonWithConda a = new RunPythonWithConda();
+        a.face();
         JSONObject jsonObject= JSON.parseObject( remind);
         if(jsonObject!=null){
             String string2 = jsonObject.getString("sampleRate");
@@ -132,9 +134,15 @@ public class realtimeAudio {
                 log.info("数据的大小为{}", message.capacity());
                 log.info("[接受消息的人{}", sid);
                 byte[] array = message.array();
-                if(array[0]==1){
+                if(array[0]==-1&&array[1]==-1){
                     log.info("停止位");
                     APIWebsocket.flag=true;
+                    synchronized (message3){
+                        if(response.isEmpty()) {
+                            message3.wait();
+                        }
+                    }
+                    sendToSpecificClient(sid,response);
                 }
                 // 发送数据给API
                 Map<String, Object> connect = apiWebsocket.connect();
@@ -159,10 +167,6 @@ public class realtimeAudio {
                                 }// 等待APIWebsocket通知
                             }
                         });
-                        if(response!=null){
-                            sendToSpecificClient(sid,response);
-                            log.info("面试的问题已经发出{}", response);
-                        }
                         log.info("返回的不为空的值为{}",message1);
                         sendToSpecificClient(sid, "AI识别结果：" + message1);
                         log.info("返回的值为{}",message);
@@ -181,10 +185,6 @@ public class realtimeAudio {
     public void onClose(Session session, @PathParam("sid") String sid) {
         Session remove = sessionMap.remove(sid);
         if (remove != null) {
-            if(response!=null){
-                sendToSpecificClient(sid,  response);
-                log.info("面试的问题已经发出{}", response);
-            }
             log.info("[连接关闭] 客户端: {} | 当前在线: {}", sid, sessionMap.size());
         }
         log.info("[连接关闭] 剩余在线: {}", sessionMap.size());
