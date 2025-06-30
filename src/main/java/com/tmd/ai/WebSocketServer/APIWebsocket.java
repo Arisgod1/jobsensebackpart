@@ -7,6 +7,8 @@ import com.tmd.ai.controller.InterviewController;
 import jakarta.websocket.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -31,7 +33,12 @@ import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvis
 @Slf4j
 public class APIWebsocket {
 
-    private  ChatClient chatClient;
+    public static ChatClient chatClient;
+    @Autowired
+    public APIWebsocket(@Qualifier("chatClient") ChatClient chatClient) {
+        APIWebsocket.chatClient = chatClient;
+    }
+
    //作为客户端向ai发送消息
     private static Session session;
     public static  final // 创建一个固定大小的线程池（推荐方式）
@@ -93,19 +100,34 @@ public class APIWebsocket {
                         log.info("[任务完成]");
                         //任务可以结束了，关闭链接
                        // APIWebsocket.class.notify();
-                        session.close();
-                        log.info("任务结束，session已经关闭");
+                         synchronized (realtimeAudio.message3){
+                             String pdfContent=InterviewController.pdfContent;
+                             String prompt="这是这个人的简历内容:  "+pdfContent+"这是这个人的自我介绍或者回答的问题，count为1证明是自我介绍，大于一的你就当作是回答问题，下面是count的值:"+count
+                                     +message1+"    请根据上述提供的信酝酿一个能测试出面试者真正水平的问题，不要太长，五十字以内足以";
+                             String response = chatClient.prompt()
+                                                            .user(prompt)
+                                                            .call()
+                                                            .content();
+                             realtimeAudio.response=response;
+                             log.info("[结果消息]{}", response);
+                             count++;
+                             realtimeAudio.message3.notify();
+                                                }
+                                                if(APIWebsocket.count==5){
+                                                    session.close();
+                                                    log.info("任务结束，session已经关闭");
+                                                }
+                                                //这里发完之后需要复用连接
+                            string=UUID.randomUUID().toString();
+                            task_id="";
+                            String runTaskMessage1 = "{\"header\":{\"action\":\"run-task\",\"task_id\":\""+string+"\",\"streaming\":\"duplex\"},\"payload\":{\"task_group\":\"audio\"" +
+                                ",\"task\":\"asr\",\"function\":\"recognition\",\"model\":\"paraformer-realtime-v2\",\"parameters\":{\"format\":\"pcm\",\"sample_rate\":16000,\"disfluency_removal_enabled\":false,\"language_hints\":[\"zh\"]}" +
+                                ",\"input\":{}}}";
+                            APIWebsocket.session.getBasicRemote().sendText(runTaskMessage1);
+                            log.info("[发送消息] 发送runTaskMessage数据: {}", runTaskMessage1);
                         //断开realtime和API的链接
                         //把message1和简历内容一起传递给ai，返回一个问题，然后问题发送给前端
-                        String pdfContent=InterviewController.pdfContent;
-                        String prompt="这是这个人的简历内容:  "+pdfContent+"这是这个人的自我介绍或者回答的问题，count为1证明是自我介绍，大于一的你就当作是回答问题，下面是count的值:"+count
-                                +message1+"    请根据上述提供的信酝酿一个能测试出面试者真正水平的问题，不要太长，五十字以内足以";
-                        String response = chatClient.prompt()
-                                .user(prompt)
-                                .call()
-                                .content();
-                        realtimeAudio.response=response;
-                        count++;
+
                     } else {
                         log.info("[错误消息]{}", head.getString("error_message"));
                     }
@@ -194,7 +216,7 @@ public class APIWebsocket {
                             @Override
                             public void run() {
                                 byte[] array = message.array();
-                                if (array[0] != -1){
+                                if (array[0] != -1&&array[1]!=-1){
 
                                     log.info("开始发送数据,又大又圆的书,task_id为{}", task_id);
                                     if (!task_id.isEmpty()){

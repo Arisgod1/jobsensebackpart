@@ -2,6 +2,7 @@ package com.tmd.ai.WebSocketServer;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.tmd.ai.service.RunPythonWithConda;
 import jakarta.websocket.*;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -65,9 +67,13 @@ public class realtimeAudio {
     static  String  message1="";
     static final Object message2=new Object();
     static  String response="";
+    static final Object message3=new Object();
     @OnOpen
     public void onOpen(Session session, @PathParam("sid") String sid,@PathParam("remind") String remind) {
         JSONObject jsonObject= JSON.parseObject( remind);
+        RunPythonWithConda runPythonWithConda = new RunPythonWithConda();
+        runPythonWithConda.face();
+        log.info("开始人脸识别");
         if(jsonObject!=null){
             String string2 = jsonObject.getString("sampleRate");
             String string1 = jsonObject.getString("channel");
@@ -122,7 +128,7 @@ public class realtimeAudio {
             throw new RuntimeException(e);
         }
     }
-    private static final APIWebsocket apiWebsocket = new APIWebsocket();
+    private static final APIWebsocket apiWebsocket = new APIWebsocket(APIWebsocket.chatClient);
     @OnMessage
     public void onMessage(ByteBuffer  message, @PathParam("sid") String sid) throws InterruptedException {
 
@@ -132,9 +138,18 @@ public class realtimeAudio {
                 log.info("数据的大小为{}", message.capacity());
                 log.info("[接受消息的人{}", sid);
                 byte[] array = message.array();
-                if(array[0]==1){
+                log.info("数组的的内容为{}", Arrays.toString(array));
+                if(isContainsStopFlag(array)){
                     log.info("停止位");
                     APIWebsocket.flag=true;
+                    Map<String, Object> connect = apiWebsocket.connect();
+                    apiWebsocket.sendMessage(message,(Session)connect.get("session"));
+                    synchronized (message3){
+                        if(response.isEmpty()) {
+                            message3.wait();
+                        }
+                    }
+                    sendToSpecificClient(sid,response);
                 }
                 // 发送数据给API
                 Map<String, Object> connect = apiWebsocket.connect();
@@ -159,10 +174,6 @@ public class realtimeAudio {
                                 }// 等待APIWebsocket通知
                             }
                         });
-                        if(response!=null){
-                            sendToSpecificClient(sid,response);
-                            log.info("面试的问题已经发出{}", response);
-                        }
                         log.info("返回的不为空的值为{}",message1);
                         sendToSpecificClient(sid, "AI识别结果：" + message1);
                         log.info("返回的值为{}",message);
@@ -173,18 +184,27 @@ public class realtimeAudio {
             } catch (Exception e) {
                 log.error("结果回传线程异常{}", e.getMessage());
             }
-
-
-
     }
+
+    private boolean isContainsStopFlag(byte[] array) {
+        // 处理数组为空的情况
+        if (array == null) {
+            return false;
+        }
+        // 停止标志为字节值-1，对应无符号值255
+        final byte STOP_FLAG = (byte)0xFF;
+        for (int i = 0; i < 16; i++) {
+            if(array[i]!=STOP_FLAG){
+                return false;
+            }
+        }
+        return true;
+    }
+
     @OnClose
     public void onClose(Session session, @PathParam("sid") String sid) {
         Session remove = sessionMap.remove(sid);
         if (remove != null) {
-            if(response!=null){
-                sendToSpecificClient(sid,  response);
-                log.info("面试的问题已经发出{}", response);
-            }
             log.info("[连接关闭] 客户端: {} | 当前在线: {}", sid, sessionMap.size());
         }
         log.info("[连接关闭] 剩余在线: {}", sessionMap.size());
