@@ -29,7 +29,7 @@ public class CommonConfiguration {
         return SimpleVectorStore.builder(embeddingModel).build();
     }
 
-    @Bean
+    @Bean("chatClient")
     public ChatClient chatClient(OpenAiChatModel model,ChatMemory chatMemory){
         return ChatClient
                 .builder(model)
@@ -41,7 +41,7 @@ public class CommonConfiguration {
                 )
                 .build();
     }
-    @Bean
+    @Bean("pdfChatClientModel")
     public ChatClient PDFModel(OpenAiChatModel model, ChatMemory chatMemory){
         return ChatClient
                 .builder(model)
@@ -53,7 +53,7 @@ public class CommonConfiguration {
                 )
                 .build();
     }
-    @Bean
+    @Bean("pdfChatClient")
     public ChatClient pdfChatClient(OpenAiChatModel model, ChatMemory chatMemory, VectorStore vectorStore) {
         return ChatClient
                 .builder(model)

@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -61,15 +62,18 @@ public class realtimeAudio {
 //服务端给客户端发消息
 //存放会话对象
     public static  final ConcurrentHashMap<String, Session> sessionMap = new ConcurrentHashMap<>();
+   // private static final Logger logger = Logger.getLogger(WebSocketServer.class.getName());
+  //  private static final String apikey="";
     static  String  message1="";
     static final Object message2=new Object();
     static  String response="";
     static final Object message3=new Object();
     @OnOpen
     public void onOpen(Session session, @PathParam("sid") String sid,@PathParam("remind") String remind) {
-        RunPythonWithConda a = new RunPythonWithConda();
-        a.face();
         JSONObject jsonObject= JSON.parseObject( remind);
+        RunPythonWithConda runPythonWithConda = new RunPythonWithConda();
+        runPythonWithConda.face();
+        log.info("开始人脸识别");
         if(jsonObject!=null){
             String string2 = jsonObject.getString("sampleRate");
             String string1 = jsonObject.getString("channel");
@@ -124,7 +128,7 @@ public class realtimeAudio {
             throw new RuntimeException(e);
         }
     }
-    private static final APIWebsocket apiWebsocket = new APIWebsocket();
+    private static final APIWebsocket apiWebsocket = new APIWebsocket(APIWebsocket.chatClient);
     @OnMessage
     public void onMessage(ByteBuffer  message, @PathParam("sid") String sid) throws InterruptedException {
 
@@ -134,9 +138,12 @@ public class realtimeAudio {
                 log.info("数据的大小为{}", message.capacity());
                 log.info("[接受消息的人{}", sid);
                 byte[] array = message.array();
-                if(array[0]==-1&&array[1]==-1){
+                log.info("数组的的内容为{}", Arrays.toString(array));
+                if(isContainsStopFlag(array)){
                     log.info("停止位");
                     APIWebsocket.flag=true;
+                    Map<String, Object> connect = apiWebsocket.connect();
+                    apiWebsocket.sendMessage(message,(Session)connect.get("session"));
                     synchronized (message3){
                         if(response.isEmpty()) {
                             message3.wait();
@@ -177,10 +184,23 @@ public class realtimeAudio {
             } catch (Exception e) {
                 log.error("结果回传线程异常{}", e.getMessage());
             }
-
-
-
     }
+
+    private boolean isContainsStopFlag(byte[] array) {
+        // 处理数组为空的情况
+        if (array == null) {
+            return false;
+        }
+        // 停止标志为字节值-1，对应无符号值255
+        final byte STOP_FLAG = (byte)0xFF;
+        for (int i = 0; i < 16; i++) {
+            if(array[i]!=STOP_FLAG){
+                return false;
+            }
+        }
+        return true;
+    }
+
     @OnClose
     public void onClose(Session session, @PathParam("sid") String sid) {
         Session remove = sessionMap.remove(sid);
