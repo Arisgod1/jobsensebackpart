@@ -1,4 +1,4 @@
-package com.tmd.ai.WebSocketServerAndTongYi;
+package com.tmd.ai.WebSocketServer;
 
 import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,8 +24,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static com.tmd.ai.WebSocketServerAndTongYi.realtimeAudio.message1;
-import static com.tmd.ai.WebSocketServerAndTongYi.realtimeAudio.message2;
+import static com.tmd.ai.WebSocketServer.realtimeAudio.message1;
+import static com.tmd.ai.WebSocketServer.realtimeAudio.message2;
 
 @Component
 @ClientEndpoint(configurator = CustomConfiguration.class)
@@ -126,18 +126,6 @@ public class APIWebsocket {
                             log.info("[发送消息] 发送runTaskMessage数据: {}", runTaskMessage1);
                         //断开realtime和API的链接
                         //把message1和简历内容一起传递给ai，返回一个问题，然后问题发送给前端
-                        synchronized (realtimeAudio.message3){
-                            String pdfContent=InterviewController.pdfContent;
-                            String prompt="这是这个人的简历内容:  "+pdfContent+"这是这个人的自我介绍或者回答的问题，count为1证明是自我介绍，大于一的你就当作是回答问题，下面是count的值:"+count
-                                    +message1+"    请根据上述提供的信酝酿一个能测试出面试者真正水平的问题，不要太长，五十字以内足以";
-                            String response = chatClient.prompt()
-                                    .user(prompt)
-                                    .call()
-                                    .content();
-                            realtimeAudio.response=response;
-                            count++;
-                            realtimeAudio.message3.notify();
-                        }
 
                     } else {
                         log.info("[错误消息]{}", head.getString("error_message"));
@@ -249,7 +237,6 @@ public class APIWebsocket {
                                                 // 新增：验证WebSocket连接状态
                                                 if (APIWebsocket.session == null || !APIWebsocket.session.isOpen()) {
                                                     log.error("WebSocket连接未打开，无法发送数据");
-
                                                     throw new RuntimeException("WebSocket连接异常");
                                                 }
                                                 // 新增：获取连接状态信息
