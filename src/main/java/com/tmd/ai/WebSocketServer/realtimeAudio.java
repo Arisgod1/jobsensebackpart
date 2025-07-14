@@ -201,8 +201,7 @@ public class realtimeAudio {
         return true;
     }
 
-    @OnClose
-    public void onClose(Session session, @PathParam("sid") String sid) {
+    @OnClose public void onClose(Session session, @PathParam("sid") String sid) {
         Session remove = sessionMap.remove(sid);
         if (remove != null) {
             log.info("[连接关闭] 客户端: {} | 当前在线: {}", sid, sessionMap.size());

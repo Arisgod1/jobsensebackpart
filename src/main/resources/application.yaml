@@ -12,15 +12,30 @@ spring:
       chat:
         options:
           model: qwen-max-latest
+#    openai:
+#      api-key: LYFYgBPMyMcNWgqCtFBg:QRXZVfbBSTBxlZlkKDAU
+#      base-url: https://spark-api-open.xf-yun.com
+#      chat:
+#        options:
+#          model: x1
       embedding:
         options:
           model: text-embedding-v3
           dimensions: 1024
+#    xunfei:
+#      appid: 42a626ce
+#      api-key: 000eaa4ac949b2a3d2638b8a49e08c6e
+#      api-secret: YjM5ZGIwOTc2MDJmNWNhMTQwOWI2NDU2
+#      model: x1
   datasource:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://localhost:5432/jobsense
     username: postgres
     password: jinmuyan1314217
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
 
 mybatis:
   configuration:
@@ -32,3 +47,5 @@ logging:
   level:
     org.springframework.ai: debug
     com.tmd.ai: debug
+server:
+  port: 8080
