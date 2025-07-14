@@ -1,8 +1,7 @@
-package com.tmd.ai.WebSocketServer;
+package com.tmd.ai.WebSocketServerAndTongYi;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import com.tmd.ai.service.RunPythonWithConda;
 import jakarta.websocket.*;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
@@ -71,8 +70,8 @@ public class realtimeAudio {
     @OnOpen
     public void onOpen(Session session, @PathParam("sid") String sid,@PathParam("remind") String remind) {
         JSONObject jsonObject= JSON.parseObject( remind);
-        RunPythonWithConda runPythonWithConda = new RunPythonWithConda();
-        runPythonWithConda.face();
+        /*RunPythonWithConda runPythonWithConda = new RunPythonWithConda();
+        runPythonWithConda.face();*/
         log.info("开始人脸识别");
         if(jsonObject!=null){
             String string2 = jsonObject.getString("sampleRate");
@@ -149,6 +148,7 @@ public class realtimeAudio {
                             message3.wait();
                         }
                     }
+                    log.info("面试的问题已经发出{}", response);
                     sendToSpecificClient(sid,response);
                 }
                 // 发送数据给API
@@ -215,7 +215,6 @@ public class realtimeAudio {
         log.error("发生错误,客户端与中转站之间发生错误");
     }
 }
-
 
 
 
