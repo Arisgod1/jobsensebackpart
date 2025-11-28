@@ -1,4 +1,4 @@
-package com.tmd.ai.WebSocketServer;
+package com.tmd.ai.WebSocketServerAndTongYi;
 
 import com.alibaba.fastjson.JSONObject;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,8 +24,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static com.tmd.ai.WebSocketServer.realtimeAudio.message1;
-import static com.tmd.ai.WebSocketServer.realtimeAudio.message2;
+ 
 
 @Component
 @ClientEndpoint(configurator = CustomConfiguration.class)
@@ -33,26 +32,29 @@ import static com.tmd.ai.WebSocketServer.realtimeAudio.message2;
 public class APIWebsocket {
 
     public static ChatClient chatClient;
+    private final ChatClient instanceChatClient;
     @Autowired
     public APIWebsocket(@Qualifier("chatClient") ChatClient chatClient) {
         APIWebsocket.chatClient = chatClient;
+        this.instanceChatClient = chatClient;
     }
 
-   //作为客户端向ai发送消息
-    private static Session session;
-    public static  final // 创建一个固定大小的线程池（推荐方式）
-    ThreadPoolExecutor executor = new ThreadPoolExecutor(30,                     // 核心线程数
-            30,                    // 最大线程数
-            60,                    // 空闲线程存活时间
+   private Session session;
+   private static final ThreadPoolExecutor EXECUTOR = new ThreadPoolExecutor(
+            Math.max(4, Runtime.getRuntime().availableProcessors()),
+            Math.max(4, Runtime.getRuntime().availableProcessors()) * 2,
+            60,
             TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(100),  // 任务队列
-            Executors.defaultThreadFactory(), // 线程工厂
-            new ThreadPoolExecutor.CallerRunsPolicy() // 拒绝策略
+            new LinkedBlockingQueue<>(1000),
+            Executors.defaultThreadFactory(),
+            new ThreadPoolExecutor.CallerRunsPolicy()
     );
-   public static String task_id="";
-
-
-   public static Integer count=0;
+   private String task_id="";
+   private int count=0;
+   private final Object resultLock = new Object();
+   private final Object finishLock = new Object();
+   private String partialResult = "";
+   private String finalResponse = "";
 
     @OnOpen
     public void onOpen(Session session, EndpointConfig config) throws DeploymentException, IOException {
@@ -63,7 +65,7 @@ public class APIWebsocket {
     @OnMessage
     public void onMessage(String message) throws IOException, InterruptedException {
         log.info("[APIWEBSOCKET接收消息] 获取服务端的数据: {}", message);
-        executor.submit(new Runnable() {
+        EXECUTOR.submit(new Runnable() {
             @Override
             public void run() {
 
@@ -83,46 +85,41 @@ public class APIWebsocket {
                         log.info("[开始识别]，服务器知道任务已经开启");
                         // 开始识别，调用sendmessage发送消息，激活下面的锁
                         log.info("激活锁，准备发送数据，task_id为{}", string1);
-//                        flag = true;
                     } else if (head.getString("event").equals("result-generated")) {
-                            synchronized (message2){
-                                log.info("结果开始生成,开始接受");
-                                JSONObject payload = jsonObject.getJSONObject("payload");
-                                JSONObject output = payload.getJSONObject("output");
-                                JSONObject sentence = output.getJSONObject("sentence");
-                                if(sentence.getString("sentence_end").equals("true")){
-                                    message1 += sentence.getString("text");
+                            JSONObject payload = jsonObject.getJSONObject("payload");
+                            JSONObject output = payload.getJSONObject("output");
+                            JSONObject sentence = output.getJSONObject("sentence");
+                            synchronized (resultLock){
+                                if("true".equals(sentence.getString("sentence_end"))){
+                                    partialResult += sentence.getString("text");
                                 }
-                                message2.notify();
+                                resultLock.notifyAll();
                             }
                     } else if (head.getString("event").equals("task-finished")) {
                         log.info("[任务完成]");
-                        //任务可以结束了，关闭链接
-                       // APIWebsocket.class.notify();
-                         synchronized (realtimeAudio.message3){
-                             String pdfContent=InterviewController.pdfContent;
-                             String prompt="这是这个人的简历内容:  "+pdfContent+"这是这个人的自我介绍或者回答的问题，count为1证明是自我介绍，大于一的你就当作是回答问题，下面是count的值:"+count
-                                     +message1+"    请根据上述提供的信酝酿一个能测试出面试者真正水平的问题，不要太长，五十字以内足以";
-                             String response = chatClient.prompt()
-                                                            .user(prompt)
-                                                            .call()
-                                                            .content();
-                             realtimeAudio.response=response;
-                             log.info("[结果消息]{}", response);
-                             count++;
-                             realtimeAudio.message3.notify();
-                                                }
-                                                if(APIWebsocket.count==5){
-                                                    session.close();
-                                                    log.info("任务结束，session已经关闭");
-                                                }
-                                                //这里发完之后需要复用连接
+                        synchronized (finishLock){
+                            String pdfContent=InterviewController.pdfContent;
+                            String prompt="这是这个人的简历内容:  "+pdfContent+"这是这个人的自我介绍或者回答的问题，count为1证明是自我介绍，大于一的你就当作是回答问题，下面是count的值:"+count+partialResult+"    请根据上述提供的信酝酿一个能测试出面试者真正水平的问题，不要太长，五十字以内足以";
+                            String response = instanceChatClient.prompt()
+                                    .user(prompt)
+                                    .call()
+                                    .content();
+                            finalResponse=response;
+                            log.info("[结果消息]{}", response);
+                            count++;
+                            finishLock.notifyAll();
+                        }
+                        if(count==5){
+                            session.close();
+                            log.info("任务结束，session已经关闭");
+                        }
+                        //这里发完之后需要复用连接
                             string=UUID.randomUUID().toString();
                             task_id="";
                             String runTaskMessage1 = "{\"header\":{\"action\":\"run-task\",\"task_id\":\""+string+"\",\"streaming\":\"duplex\"},\"payload\":{\"task_group\":\"audio\"" +
                                 ",\"task\":\"asr\",\"function\":\"recognition\",\"model\":\"paraformer-realtime-v2\",\"parameters\":{\"format\":\"pcm\",\"sample_rate\":16000,\"disfluency_removal_enabled\":false,\"language_hints\":[\"zh\"]}" +
                                 ",\"input\":{}}}";
-                            APIWebsocket.session.getBasicRemote().sendText(runTaskMessage1);
+                            session.getBasicRemote().sendText(runTaskMessage1);
                             log.info("[发送消息] 发送runTaskMessage数据: {}", runTaskMessage1);
                         //断开realtime和API的链接
                         //把message1和简历内容一起传递给ai，返回一个问题，然后问题发送给前端
@@ -149,7 +146,7 @@ public class APIWebsocket {
     public void onError(Throwable error) {
         System.out.println("发生错误");
     }
-    static String string = UUID.randomUUID().toString();
+    private String string = UUID.randomUUID().toString();
    /*static String runTaskMessage = "{\"header\":{" +
             "\"streaming\":\"duplex\"," +
             "\"task_id\":\""+string+"\"," +
@@ -171,7 +168,7 @@ public class APIWebsocket {
            ",\"task\":\"asr\",\"function\":\"recognition\",\"model\":\"paraformer-realtime-v2\",\"parameters\":{\"format\":\"pcm\",\"sample_rate\":16000,\"disfluency_removal_enabled\":false,\"language_hints\":[\"zh\"]}" +
            ",\"input\":{}}}";
      private static final ObjectMapper objectMapper = new ObjectMapper();
-     public static boolean flag = false;
+     
 
 
 
@@ -205,13 +202,13 @@ public class APIWebsocket {
                         //先发送run-task指令，等到上面返回task-started消息，再发送音频流，发送完之后。发送finish-task指令
                         //所以需要一个锁来锁住，保证先发送run-task，再发送音频流，最后发送finish-tas
                             if(!runTaskMessage.isEmpty()){
-                               APIWebsocket.session.getBasicRemote().sendText(runTaskMessage);
+                               this.session.getBasicRemote().sendText(runTaskMessage);
                                 log.info("[发送消息] 发送runTaskMessage数据: {}", runTaskMessage);
                                 runTaskMessage="";
                             }
                         //被唤醒之后
                         //将数据类型转换成pcm，而且源数据格式就是pcm
-                        executor.submit(new Runnable() {
+                        EXECUTOR.submit(new Runnable() {
                             @Override
                             public void run() {
                                 byte[] array = message.array();
@@ -235,15 +232,15 @@ public class APIWebsocket {
                                             APIWebsocket.session.getBasicRemote().sendBinary(ByteBuffer.wrap(baos.toByteArray()));
                                             log.info("我已经发送检测网络层的信息{}", messageInspect);*/
                                                 // 新增：验证WebSocket连接状态
-                                                if (APIWebsocket.session == null || !APIWebsocket.session.isOpen()) {
+                                                if (session == null || !session.isOpen()) {
                                                     log.error("WebSocket连接未打开，无法发送数据");
                                                     throw new RuntimeException("WebSocket连接异常");
                                                 }
                                                 // 新增：获取连接状态信息
                                                 String connectionInfo = String.format(
                                                         "WebSocket状态: %s,最大消息大小: %d",
-                                                        APIWebsocket.session.isOpen() ? "已连接" : "已关闭",
-                                                        APIWebsocket.session.getMaxBinaryMessageBufferSize()
+                                                        session.isOpen() ? "已连接" : "已关闭",
+                                                        session.getMaxBinaryMessageBufferSize()
                                                 );
                                                 log.info(connectionInfo);
                                                 String s = HexFormat.of().formatHex(message.array(),0,32);
@@ -273,8 +270,8 @@ public class APIWebsocket {
                                                 }catch (Exception e){
                                                     log.error("发送数据异常{}", e.getMessage());
                                                     // 获取详细的网络错误信息
-                                                    if (APIWebsocket.session.getUserProperties().containsKey("javax.websocket.endpoint.remoteAddress")) {
-                                                        Socket socket = (Socket) APIWebsocket.session.getUserProperties().get("javax.websocket.endpoint.remoteAddress");
+                                                    if (session.getUserProperties().containsKey("javax.websocket.endpoint.remoteAddress")) {
+                                                        Socket socket = (Socket) session.getUserProperties().get("javax.websocket.endpoint.remoteAddress");
                                                         if (socket != null) {
                                                             log.error("网络连接状态: {}", socket.isConnected() ? "已连接" : "已断开");
                                                             log.error("网络错误详情: {}", socket.getLocalSocketAddress());
@@ -314,32 +311,7 @@ public class APIWebsocket {
                             }
                             }
                         });
-                          executor.submit(new Runnable() {
-                                @Override
-                                public void run() {
-                                    String json = "{\n" +
-                                            "    \"header\": {\n" +
-                                            "        \"action\": \"finish-task\",\n" +
-                                            "        \"task_id\": \"" + task_id + "\",\n" +
-                                            "        \"streaming\": \"duplex\"\n" +
-                                            "    },\n" +
-                                            "    \"payload\": {\n" +
-                                            "        \"input\": {}\n" +
-                                            "    }\n" +
-                                            "}";
-                                    if(flag){
-                                        flag = false;
-                                        try {
-                                            log.info("[发送消息] 尝试发送finish-task数据: {}", json);
-                                            APIWebsocket.session.getBasicRemote().sendText(json);
-                                        } catch (IOException e) {
-                                            throw new RuntimeException(e);
-                                        }
-                                        log.info("[发送消息] 发送finish-task数据: {}", "{\"header\":{");
-
-                                    }
-                                }
-                            });
+                        
 
                         /*String finishTaskMessage = "{\"header\":{\"streaming\":\"duplex\",\"task_id\":" + task_id + ",\"action\":\"finish-task\"},\"payload\":{\"input\":\"{}\"}}";
                         APIWebsocket.session.getBasicRemote().sendText(finishTaskMessage); // 直接发送，无需二次序列化      APIWebsocket.session.getBasicRemote().sendText(finishTaskMessage); // 直接发送，无需二次序列化
@@ -367,7 +339,7 @@ public class APIWebsocket {
                 log.info("container容器为{}", container);
                 Session session = container.connectToServer(this, uri);
                 log.info("session为{}", session);
-                APIWebsocket.session = session;
+                this.session = session;
                 count++;
             }
             Map<String, Object> config = new HashMap<>();
@@ -376,6 +348,48 @@ public class APIWebsocket {
             return config;
         } catch (Exception e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public void sendFinish(){
+        String json = "{\n" +
+                "    \"header\": {\n" +
+                "        \"action\": \"finish-task\",\n" +
+                "        \"task_id\": \"" + task_id + "\",\n" +
+                "        \"streaming\": \"duplex\"\n" +
+                "    },\n" +
+                "    \"payload\": {\n" +
+                "        \"input\": {}\n" +
+                "    }\n" +
+                "}";
+        try {
+            this.session.getBasicRemote().sendText(json);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public String awaitPartialResult(long timeoutMillis){
+        long start = System.currentTimeMillis();
+        synchronized (resultLock){
+            while (partialResult.isEmpty() && System.currentTimeMillis() - start < timeoutMillis){
+                try { resultLock.wait(timeoutMillis); } catch (InterruptedException ignored) {}
+            }
+            String r = partialResult;
+            partialResult = "";
+            return r;
+        }
+    }
+
+    public String awaitFinalResponse(long timeoutMillis){
+        long start = System.currentTimeMillis();
+        synchronized (finishLock){
+            while (finalResponse.isEmpty() && System.currentTimeMillis() - start < timeoutMillis){
+                try { finishLock.wait(timeoutMillis); } catch (InterruptedException ignored) {}
+            }
+            String r = finalResponse;
+            finalResponse = "";
+            return r;
         }
     }
 }

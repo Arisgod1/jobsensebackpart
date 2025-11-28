@@ -1,4 +1,4 @@
-package com.tmd.ai.WebSocketServer;
+package com.tmd.ai.WebSocketServerAndTongYi;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -8,6 +8,7 @@ import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import com.tmd.ai.WebSocketServerAndTongYi.*;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -64,10 +65,7 @@ public class realtimeAudio {
     public static  final ConcurrentHashMap<String, Session> sessionMap = new ConcurrentHashMap<>();
    // private static final Logger logger = Logger.getLogger(WebSocketServer.class.getName());
   //  private static final String apikey="";
-    static  String  message1="";
-    static final Object message2=new Object();
-    static  String response="";
-    static final Object message3=new Object();
+    private static final ConcurrentHashMap<String, APIWebsocket> apiClients = new ConcurrentHashMap<>();
     @OnOpen
     public void onOpen(Session session, @PathParam("sid") String sid,@PathParam("remind") String remind) {
         JSONObject jsonObject= JSON.parseObject( remind);
@@ -128,62 +126,37 @@ public class realtimeAudio {
             throw new RuntimeException(e);
         }
     }
-    private static final APIWebsocket apiWebsocket = new APIWebsocket(APIWebsocket.chatClient);
+    
     @OnMessage
     public void onMessage(ByteBuffer  message, @PathParam("sid") String sid) throws InterruptedException {
-
-            try {
-                APIWebsocket.flag=false;
-                log.info("[接收消息] 获取音频数据: {}", message);
-                log.info("数据的大小为{}", message.capacity());
-                log.info("[接受消息的人{}", sid);
-                byte[] array = message.array();
-                log.info("数组的的内容为{}", Arrays.toString(array));
-                if(isContainsStopFlag(array)){
-                    log.info("停止位");
-                    APIWebsocket.flag=true;
-                    Map<String, Object> connect = apiWebsocket.connect();
-                    apiWebsocket.sendMessage(message,(Session)connect.get("session"));
-                    synchronized (message3){
-                        if(response.isEmpty()) {
-                            message3.wait();
-                        }
-                    }
-                    sendToSpecificClient(sid,response);
+        try {
+            log.info("[接收消息] 获取音频数据: {}", message);
+            log.info("数据的大小为{}", message.capacity());
+            log.info("[接受消息的人{}", sid);
+            APIWebsocket client = apiClients.computeIfAbsent(sid, k -> new APIWebsocket(APIWebsocket.chatClient));
+            byte[] array = message.array();
+            if(isContainsStopFlag(array)){
+                Map<String, Object> connect = client.connect();
+                client.sendFinish();
+                String finalResp = client.awaitFinalResponse(10000);
+                if(finalResp != null && !finalResp.isEmpty()){
+                    sendToSpecificClient(sid, finalResp);
                 }
-                // 发送数据给API
-                Map<String, Object> connect = apiWebsocket.connect();
-                Integer success = (Integer)  connect.get("success");
-                if (success == 1) {
-                    log.info("[连接成功]");
-                    apiWebsocket.sendMessage(message,(Session)connect.get("session"));
-                    sendToSpecificClient1(sid);
-                    try {
-                        // 等待AI返回结果（假设通过message1获取）
-                        log.info("通知成功");
-                        //这里阻塞了音频数据的连续传输，开一个线程专门用来监听结果？？？？？？
-                        APIWebsocket.executor.submit(() -> {
-                            if(message1.isEmpty()){
-                                synchronized (message2){
-                                    log.info("等待APIWebsocket返回中");
-                                    try {
-                                        message2.wait(2000);
-                                    } catch (InterruptedException e) {
-                                        throw new RuntimeException(e);
-                                    }
-                                }// 等待APIWebsocket通知
-                            }
-                        });
-                        log.info("返回的不为空的值为{}",message1);
-                        sendToSpecificClient(sid, "AI识别结果：" + message1);
-                        log.info("返回的值为{}",message);
-                    } catch (Exception e) {
-                        log.error("结果回传线程异常{}", e.getMessage());
-                    }
-                }
-            } catch (Exception e) {
-                log.error("结果回传线程异常{}", e.getMessage());
+                return;
             }
+            Map<String, Object> connect = client.connect();
+            Integer success = (Integer)  connect.get("success");
+            if (success == 1) {
+                client.sendMessage(message,(Session)connect.get("session"));
+                sendToSpecificClient1(sid);
+                String partial = client.awaitPartialResult(2000);
+                if(partial != null && !partial.isEmpty()){
+                    sendToSpecificClient(sid, "AI识别结果：" + partial);
+                }
+            }
+        } catch (Exception e) {
+            log.error("结果回传线程异常{}", e.getMessage());
+        }
     }
 
     private boolean isContainsStopFlag(byte[] array) {
@@ -207,6 +180,7 @@ public class realtimeAudio {
             log.info("[连接关闭] 客户端: {} | 当前在线: {}", sid, sessionMap.size());
         }
         log.info("[连接关闭] 剩余在线: {}", sessionMap.size());
+        apiClients.remove(sid);
     }
     @OnError
     public void onError(Throwable error) {

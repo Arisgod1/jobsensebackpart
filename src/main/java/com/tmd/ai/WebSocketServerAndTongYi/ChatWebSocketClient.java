@@ -1,4 +1,4 @@
-package com.tmd.ai.WebSocketServer;
+package com.tmd.ai.WebSocketServerAndTongYi;
 
 import com.alibaba.fastjson.JSONObject;
 import jakarta.websocket.*;
